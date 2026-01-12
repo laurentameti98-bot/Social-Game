@@ -24,7 +24,23 @@ export async function setupSocketIO(io: Server) {
   console.log(`📦 Initialized ${rooms.length} room(s)`);
   // Authentication middleware
   io.use(async (socket, next) => {
-    const token = socket.handshake.auth.token;
+    // Try to get token from auth object first, then from cookies
+    let token = socket.handshake.auth.token;
+    
+    // If no token in auth, try to get it from cookies
+    if (!token && socket.handshake.headers.cookie) {
+      const cookies = socket.handshake.headers.cookie.split(';').reduce((acc, cookie) => {
+        const trimmed = cookie.trim();
+        const equalIndex = trimmed.indexOf('=');
+        if (equalIndex > 0) {
+          const key = trimmed.substring(0, equalIndex);
+          const value = trimmed.substring(equalIndex + 1);
+          acc[key] = decodeURIComponent(value);
+        }
+        return acc;
+      }, {} as Record<string, string>);
+      token = cookies.token;
+    }
 
     if (!token) {
       // Guest mode

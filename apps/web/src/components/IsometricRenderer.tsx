@@ -16,11 +16,17 @@ export function IsometricRenderer() {
   const { roomState } = useGameStore();
   const { socket } = useSocketStore();
   const { user } = useAuthStore();
+  
+  // Memoize stable IDs to prevent unnecessary re-renders when object references change
+  const roomStateId = roomState?.room?.id || null;
+  const socketId = socket?.id || null;
+  const userId = user?.id || null;
 
   useEffect(() => {
-    const currentRoomState = roomState;
-    const currentSocket = socket;
-    const currentUser = user;
+    let currentRoomState = roomState;
+    // Use functions to always get current values from stores
+    const getCurrentSocket = () => useSocketStore.getState().socket;
+    const getCurrentUser = () => useAuthStore.getState().user;
     
     if (!containerRef.current || !currentRoomState) return;
 
@@ -114,13 +120,20 @@ export function IsometricRenderer() {
 
           // Click handler
           tile.on('pointerdown', () => {
-            if (currentSocket && currentUser) {
+            const currentSocket = getCurrentSocket();
+            const currentUser = getCurrentUser();
+            if (currentSocket && currentUser && app && app.stage) {
+              console.log('Tile clicked:', x, y);
               currentSocket.emit(CLIENT_EVENTS.MOVE_INTENT, { x, y });
+            } else {
+              console.warn('Cannot move: socket=', !!currentSocket, 'user=', !!currentUser, 'app=', !!app);
             }
           });
 
-          app.stage.addChild(tile);
-          tileSprites.push(tile);
+          if (app && app.stage) {
+            app.stage.addChild(tile);
+            tileSprites.push(tile);
+          }
         }
       }
 
@@ -141,13 +154,16 @@ export function IsometricRenderer() {
           chair.cursor = 'pointer';
 
           chair.on('pointerdown', () => {
-            if (currentSocket) {
+            const currentSocket = getCurrentSocket();
+            if (currentSocket && app && app.stage) {
               currentSocket.emit(CLIENT_EVENTS.INTERACT, { objectId: obj.id, action: 'sit' });
             }
           });
 
-          app.stage.addChild(chair);
-          objectSprites.set(obj.id, chair);
+          if (app && app.stage) {
+            app.stage.addChild(chair);
+            objectSprites.set(obj.id, chair);
+          }
         }
       }
 
@@ -192,14 +208,23 @@ export function IsometricRenderer() {
       }
 
       function updatePlayerSprite(playerId: string, player: typeof players[0]) {
-        if (!app) return;
+        if (!app || !app.stage) return;
         let sprite = playerSprites.get(playerId);
         if (!sprite) {
           sprite = createPlayerSprite(player);
-          app.stage.addChild(sprite);
-          playerSprites.set(playerId, sprite);
+          if (app && app.stage) {
+            app.stage.addChild(sprite);
+            playerSprites.set(playerId, sprite);
+          }
         }
 
+        // Don't update position if animation is in progress - animation handles position
+        if (playerAnimations.has(playerId)) {
+          // Don't update anything during animation - animation loop handles everything
+          return;
+        }
+
+        // No animation in progress, update position normally
         const screenX = (player.x - player.y) * (TILE_WIDTH / 2) + TILE_WIDTH / 2 + offsetX;
         const screenY = (player.x + player.y) * (TILE_HEIGHT / 2) + offsetY - (player.state === 'sitting' ? 8 : 0);
 
@@ -225,35 +250,108 @@ export function IsometricRenderer() {
           const tileDuration = 300; // ms per tile
           const currentTileIndex = Math.floor(elapsed / tileDuration);
 
-          if (currentTileIndex < anim.path.length) {
+          if (currentTileIndex < anim.path.length && anim.path.length > 0) {
             const currentTile = anim.path[currentTileIndex];
-            const nextTile = anim.path[currentTileIndex + 1];
+            
+            // Check if we have a next tile to interpolate to
+            if (currentTileIndex + 1 < anim.path.length) {
+              const nextTile = anim.path[currentTileIndex + 1];
+              
+              if (currentTile && nextTile) {
+                // Interpolate between tiles
+                const tileProgress = (elapsed % tileDuration) / tileDuration;
+                const x = currentTile.x + (nextTile.x - currentTile.x) * tileProgress;
+                const y = currentTile.y + (nextTile.y - currentTile.y) * tileProgress;
 
-            if (nextTile) {
-              // Interpolate between tiles
-              const tileProgress = (elapsed % tileDuration) / tileDuration;
-              const x = currentTile.x + (nextTile.x - currentTile.x) * tileProgress;
-              const y = currentTile.y + (nextTile.y - currentTile.y) * tileProgress;
-
-              if (currentRoomState) {
-                const player = currentRoomState.players.find((p: typeof currentRoomState.players[0]) => p.id === playerId);
-                if (player) {
-                  const screenX = (x - y) * (TILE_WIDTH / 2) + TILE_WIDTH / 2 + offsetX;
-                  const screenY = (x + y) * (TILE_HEIGHT / 2) + offsetY;
-                  const sprite = playerSprites.get(playerId);
-                  if (sprite) {
-                    sprite.x = screenX;
-                    sprite.y = screenY;
+                if (currentRoomState) {
+                  const player = currentRoomState.players.find((p: typeof currentRoomState.players[0]) => p.id === playerId);
+                  if (player) {
+                    const screenX = (x - y) * (TILE_WIDTH / 2) + TILE_WIDTH / 2 + offsetX;
+                    const screenY = (x + y) * (TILE_HEIGHT / 2) + offsetY;
+                    const sprite = playerSprites.get(playerId);
+                    if (sprite) {
+                      sprite.x = screenX;
+                      sprite.y = screenY;
+                    }
                   }
                 }
               }
             } else {
-              // Animation complete
-              playerAnimations.delete(playerId);
+              // Reached final tile - no more interpolation needed
+              // Just position at the final tile
+              if (currentTile) {
+                if (currentRoomState) {
+                  const player = currentRoomState.players.find((p: typeof currentRoomState.players[0]) => p.id === playerId);
+                  if (player) {
+                    const screenX = (currentTile.x - currentTile.y) * (TILE_WIDTH / 2) + TILE_WIDTH / 2 + offsetX;
+                    const screenY = (currentTile.x + currentTile.y) * (TILE_HEIGHT / 2) + offsetY;
+                    const sprite = playerSprites.get(playerId);
+                    if (sprite) {
+                      sprite.x = screenX;
+                      sprite.y = screenY;
+                    }
+                  }
+                }
+              }
+              
+              // Animation complete - reached final tile
+              const finalTile = anim.path[anim.path.length - 1];
+              if (finalTile) {
+                // Set sprite to final position FIRST (before removing animation)
+                const sprite = playerSprites.get(playerId);
+                if (sprite) {
+                  const screenX = (finalTile.x - finalTile.y) * (TILE_WIDTH / 2) + TILE_WIDTH / 2 + offsetX;
+                  const screenY = (finalTile.x + finalTile.y) * (TILE_HEIGHT / 2) + offsetY;
+                  sprite.x = screenX;
+                  sprite.y = screenY;
+                  console.log('Animation complete: Set sprite to final position', finalTile.x, finalTile.y, 'screen:', screenX, screenY);
+                }
+                
+                // Update player position to final tile in store
+                if (currentRoomState) {
+                  useGameStore.getState().updatePlayer(playerId, {
+                    x: finalTile.x,
+                    y: finalTile.y,
+                    path: undefined,
+                  });
+                  console.log('Animation complete: Updated store position to', finalTile.x, finalTile.y);
+                }
+                
+                // Remove animation AFTER setting position
+                playerAnimations.delete(playerId);
+              } else {
+                playerAnimations.delete(playerId);
+              }
             }
           } else {
-            // Animation complete
-            playerAnimations.delete(playerId);
+            // Animation complete - path finished
+            const finalTile = anim.path.length > 0 ? anim.path[anim.path.length - 1] : null;
+            if (finalTile) {
+              // Set sprite to final position FIRST
+              const sprite = playerSprites.get(playerId);
+              if (sprite) {
+                const screenX = (finalTile.x - finalTile.y) * (TILE_WIDTH / 2) + TILE_WIDTH / 2 + offsetX;
+                const screenY = (finalTile.x + finalTile.y) * (TILE_HEIGHT / 2) + offsetY;
+                sprite.x = screenX;
+                sprite.y = screenY;
+                console.log('Animation complete (else): Set sprite to final position', finalTile.x, finalTile.y);
+              }
+              
+              // Update player position to final tile in store
+              if (currentRoomState) {
+                useGameStore.getState().updatePlayer(playerId, {
+                  x: finalTile.x,
+                  y: finalTile.y,
+                  path: undefined,
+                });
+                console.log('Animation complete (else): Updated store position to', finalTile.x, finalTile.y);
+              }
+              
+              // Remove animation AFTER setting position
+              playerAnimations.delete(playerId);
+            } else {
+              playerAnimations.delete(playerId);
+            }
           }
         }
 
@@ -263,18 +361,53 @@ export function IsometricRenderer() {
 
       // Handle player move events
       const handlePlayerMove = (playerId: string, path: Array<{ x: number; y: number }>) => {
-        playerAnimations.set(playerId, {
-          startTime: performance.now(),
-          path,
-        });
+        console.log('handlePlayerMove called:', playerId, path);
+        if (path && path.length > 0) {
+          playerAnimations.set(playerId, {
+            startTime: performance.now(),
+            path,
+          });
+          console.log('Animation started for player', playerId);
+        } else {
+          console.warn('Empty path provided for player', playerId);
+        }
       };
 
       // Subscribe to game store updates
       const unsubscribe = useGameStore.subscribe((state: ReturnType<typeof useGameStore.getState>) => {
-        if (!app) return;
+        if (!app || !app.stage) return;
+        // Track previous state BEFORE updating currentRoomState
+        const previousPlayers = currentRoomState?.players || [];
+        
+        // Update currentRoomState reference
+        currentRoomState = state.roomState;
+        
         // Update player sprites when players change
         const currentPlayers = state.roomState?.players || [];
+        
         for (const player of currentPlayers) {
+          // Skip sprite updates entirely if animation is in progress - animation loop handles position
+          if (playerAnimations.has(player.id)) {
+            continue;
+          }
+          
+          // Check if player has a new path (movement animation) BEFORE updating sprite
+          const previousPlayer = previousPlayers.find((p) => p.id === player.id);
+          if (player.path && player.path.length > 0) {
+            // Check if this is a new path (different from previous)
+            const pathChanged = !previousPlayer?.path || 
+              JSON.stringify(previousPlayer.path) !== JSON.stringify(player.path);
+            
+            if (pathChanged && !playerAnimations.has(player.id)) {
+              // New path detected, start animation
+              console.log('Starting animation for player', player.id, 'with path', player.path);
+              handlePlayerMove(player.id, player.path);
+              // Skip sprite update for this player - animation will handle it
+              continue;
+            }
+          }
+          
+          // Update sprite position (only if no animation is in progress)
           updatePlayerSprite(player.id, player);
         }
 
@@ -282,7 +415,7 @@ export function IsometricRenderer() {
         for (const [playerId] of playerSprites) {
           if (!currentPlayers.find((p: typeof currentPlayers[0]) => p.id === playerId)) {
             const sprite = playerSprites.get(playerId);
-            if (sprite) {
+            if (sprite && app && app.stage) {
               app.stage.removeChild(sprite);
               playerSprites.delete(playerId);
               playerAnimations.delete(playerId);
@@ -291,22 +424,8 @@ export function IsometricRenderer() {
         }
       });
 
-      // Listen for player move events from socket
-      if (currentSocket) {
-        const handleMove = (data: { playerId: string; path: Array<{ x: number; y: number }> }) => {
-          handlePlayerMove(data.playerId, data.path);
-        };
-        currentSocket.on(SERVER_EVENTS.PLAYER_MOVE, handleMove);
-
-        return () => {
-          unsubscribe();
-          currentSocket.off(SERVER_EVENTS.PLAYER_MOVE, handleMove);
-          if (appRef.current) {
-            appRef.current.destroy(true);
-            appRef.current = null;
-          }
-        };
-      }
+      // Note: We don't need a separate socket handler here because the store subscribe
+      // handler will detect path changes and start animations. This avoids duplicate animations.
 
       return () => {
         unsubscribe();
@@ -325,7 +444,7 @@ export function IsometricRenderer() {
         appRef.current = null;
       }
     };
-  }, [roomState, socket, user]);
+  }, [roomStateId, socketId, userId]); // Use stable IDs instead of object references
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

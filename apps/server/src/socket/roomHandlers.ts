@@ -85,6 +85,7 @@ export function setupRoomHandlers(io: Server, socket: Socket) {
   socket.on(CLIENT_EVENTS.MOVE_INTENT, (payload: unknown) => {
     try {
       const { x, y } = moveIntentSchema.parse(payload);
+      console.log(`Move intent from ${socket.data.displayName}: (${x}, ${y})`);
       const roomSlug = socket.data.currentRoom;
 
       if (!roomSlug) {
@@ -136,6 +137,7 @@ export function setupRoomHandlers(io: Server, socket: Socket) {
       roomManager.updatePlayerState(roomSlug, socket.data.userId, 'walking');
 
       // Broadcast to room
+      console.log(`Broadcasting PLAYER_MOVE for ${socket.data.userId} with path:`, path);
       io.to(`room:${roomSlug}`).emit(SERVER_EVENTS.PLAYER_MOVE, {
         playerId: socket.data.userId,
         path,
@@ -143,11 +145,16 @@ export function setupRoomHandlers(io: Server, socket: Socket) {
 
       // Update to standing after movement completes (simplified: client will handle)
       setTimeout(() => {
-        roomManager.updatePlayerState(roomSlug, socket.data.userId, 'standing');
-        io.to(`room:${roomSlug}`).emit(SERVER_EVENTS.PLAYER_UPDATE, {
-          playerId: socket.data.userId,
-          state: 'standing',
-        });
+        const finalPlayer = roomManager.getPlayer(roomSlug, socket.data.userId);
+        if (finalPlayer) {
+          roomManager.updatePlayerState(roomSlug, socket.data.userId, 'standing');
+          io.to(`room:${roomSlug}`).emit(SERVER_EVENTS.PLAYER_UPDATE, {
+            playerId: socket.data.userId,
+            state: 'standing',
+            x: finalPlayer.x,
+            y: finalPlayer.y,
+          });
+        }
       }, path.length * 300); // 300ms per tile
     } catch (error) {
       console.error('Move intent error:', error);

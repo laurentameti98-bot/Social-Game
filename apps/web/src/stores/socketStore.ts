@@ -39,11 +39,11 @@ export const useSocketStore = create<SocketState>((set, get) => ({
       existingSocket.disconnect();
     }
 
-    // Socket.IO doesn't automatically send cookies, so we need to get the token
-    // For now, we'll use guest mode if no user is logged in
+    // Socket.IO will send cookies automatically with withCredentials: true
+    // The server will read the token from cookies
     const socket = io(SOCKET_URL, {
       auth: {
-        guest: !user,
+        // Token will be read from cookies by the server
       },
       withCredentials: true,
       transports: ['websocket', 'polling'],
@@ -56,9 +56,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
       console.log('Socket connected:', socket.id);
       set({ isConnected: true });
 
-      // Authenticate - try to get token from cookie via API call
-      // Since httpOnly cookies can't be read from JS, we'll use guest mode for now
-      // In production, you'd want to pass the token via query param or separate endpoint
+      // Send auth event - server will use token from cookie if available
       socket.emit(CLIENT_EVENTS.AUTH, { guest: !user });
 
       // Join room if already selected

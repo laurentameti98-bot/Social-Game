@@ -45,16 +45,19 @@ export function GamePage() {
     };
 
     const handlePlayerMove = (data: PlayerMovePayload) => {
+      console.log('GamePage: PLAYER_MOVE received:', data);
       updatePlayer(data.playerId, { path: data.path });
     };
 
     const handlePlayerUpdate = (data: PlayerUpdatePayload) => {
-      updatePlayer(data.playerId, {
-        state: data.state,
-        x: data.x,
-        y: data.y,
-        facing: data.facing,
-      });
+      console.log('GamePage: PLAYER_UPDATE received:', data);
+      // Only update fields that are provided (don't overwrite with undefined)
+      const updates: Partial<Player> = {};
+      if (data.state !== undefined) updates.state = data.state;
+      if (data.x !== undefined) updates.x = data.x;
+      if (data.y !== undefined) updates.y = data.y;
+      if (data.facing !== undefined) updates.facing = data.facing;
+      updatePlayer(data.playerId, updates);
     };
 
     const handleChatBroadcast = (data: ChatBroadcastPayload) => {
