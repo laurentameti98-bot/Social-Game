@@ -1,0 +1,38 @@
+{
+  "name": "@isometric-social/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx src/scripts/seed.ts",
+    "db:studio": "prisma studio",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@isometric-social/shared": "workspace:*",
+    "@fastify/cookie": "^9.2.0",
+    "@fastify/cors": "^9.0.1",
+    "@prisma/client": "^5.9.1",
+    "argon2": "^0.31.2",
+    "fastify": "^4.26.0",
+    "jsonwebtoken": "^9.0.2",
+    "prisma": "^5.9.1",
+    "socket.io": "^4.6.1",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.11.5",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.1"
+  }
+}
