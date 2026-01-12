@@ -37,5 +37,5 @@ pnpm-debug.log*
 *.db
 *.sqlite
 
-# Prisma
-prisma/migrations/
+# Prisma (keep migrations, ignore generated client)
+# prisma/migrations/ - migrations should be committed
